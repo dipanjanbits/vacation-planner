@@ -2,14 +2,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies required for building some Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    libssl-dev \
+    libffi-dev \
+    python3-dev \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for faster dependency resolution
-RUN pip install --no-cache-dir uv
+# Upgrade packaging tools and install `uv` for dependency resolution
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel uv
 
 # Copy dependency files first for better layer caching
 COPY pyproject.toml uv.lock ./
