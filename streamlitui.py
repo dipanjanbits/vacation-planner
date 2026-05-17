@@ -18,17 +18,17 @@ import streamlit as st
 from datetime import datetime
 from src.vacation_planner.crew import VacationPlanner # Replace path 1
 
-st.set_page_config(page_title="Personal AI Vacation Planner ", page_icon="✈️")
+st.set_page_config(page_title="Dream Vacation Planner — AI Trip Genie", page_icon="✈️")
 
 # Add Open Graph meta tags for URL preview/thumbnail
 st.markdown("""
-<meta property="og:title" content="Personal AI Vacation Planner" />
-<meta property="og:description" content="Plan your perfect vacation with AI-powered research and itinerary planning!" />
+<meta property="og:title" content="Dream Vacation Planner — AI Trip Genie" />
+<meta property="og:description" content="Transform dreams into travel plans with an AI-powered itinerary designer." />
 <meta property="og:type" content="website" />
 <meta property="og:image" content="https://img.icons8.com/color/96/000000/vacation.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Personal AI Vacation Planner" />
-<meta name="twitter:description" content="Plan your perfect vacation with AI-powered research and itinerary planning!" />
+<meta name="twitter:title" content="Dream Vacation Planner — AI Trip Genie" />
+<meta name="twitter:description" content="Transform dreams into travel plans with an AI-powered itinerary designer." />
 """, unsafe_allow_html=True)
 
 # Enhanced CSS styling
@@ -70,8 +70,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-header">✈️ Personal AI Vacation Planner</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Plan your perfect vacation with AI-powered research and itinerary planning!</p>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">✈️ Dream Vacation Planner</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Your AI travel concierge for unforgettable adventures — curated just for you.</p>', unsafe_allow_html=True)
 
 # Enhanced input form
 st.markdown("### 🌍 Where would you like to go?")
