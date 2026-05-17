@@ -11,6 +11,8 @@ env:
   ECS_CLUSTER: vacation-planner-cluster
   ECS_SERVICE: vacation-planner-service
   CONTAINER_NAME: vacation-planner
+  S3_BUCKET: ${{ secrets.S3_BUCKET }}
+  S3_SYNC_PATH: Vacation-Planner
 
 jobs:
   deploy:
@@ -57,6 +59,25 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Sync app assets to S3 bucket
+        if: env.S3_BUCKET != ''
+        run: |
+          echo "Syncing app files to s3://$S3_BUCKET/$S3_SYNC_PATH/"
+          aws s3 sync . s3://$S3_BUCKET/$S3_SYNC_PATH/ \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --exclude "Dockerfile" \
+            --exclude ".gitignore" \
+            --exclude "uv.lock" \
+            --exclude "pyproject.toml" \
+            --exclude "README.md" \
+            --exclude "report.md" \
+            --exclude "detailed_itinerary.md" \
+            --exclude "*.pyc" \
+            --exclude "__pycache__/*" \
+            --exclude "*.log" \
+            --delete
 
       - name: Create ECS Cluster if not exists
         run: |
