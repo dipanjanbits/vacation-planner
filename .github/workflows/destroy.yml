@@ -1,0 +1,249 @@
+name: Destroy Infrastructure (Cost Optimization)
+
+on:
+  workflow_dispatch:
+    inputs:
+      delete_ecr:
+        description: "Delete ECR repository (will delete all images)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      delete_iam_roles:
+        description: "Delete IAM roles (ecsTaskExecutionRole)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: vacation-planner
+  ECS_CLUSTER: vacation-planner-cluster
+  ECS_SERVICE: vacation-planner-service
+  AWS_DEFAULT_REGION: us-west-2
+
+jobs:
+  destroy:
+    name: Destroy AWS Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete ECS Service
+        run: |
+          echo "🗑️  Deleting ECS Service..."
+          SERVICE_EXISTS=$(aws ecs list-services --cluster ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }} --query 'serviceArns' --output text 2>/dev/null | grep -c "${{ env.ECS_SERVICE }}" || echo "0")
+          
+          if [ "$SERVICE_EXISTS" != "0" ]; then
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service ${{ env.ECS_SERVICE }} \
+              --desired-count 0 \
+              --region ${{ env.AWS_REGION }} || true
+            
+            echo "⏳ Waiting for tasks to stop..."
+            sleep 30
+            
+            aws ecs delete-service \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service ${{ env.ECS_SERVICE }} \
+              --force \
+              --region ${{ env.AWS_REGION }} || true
+            echo "✅ ECS Service deleted"
+          else
+            echo "⚠️  ECS Service not found"
+          fi
+
+      - name: Delete ECS Cluster
+        run: |
+          echo "🗑️  Deleting ECS Cluster..."
+          CLUSTER_EXISTS=$(aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }} --query 'clusters[0].status' --output text 2>/dev/null || echo "MISSING")
+          
+          if [ "$CLUSTER_EXISTS" != "MISSING" ]; then
+            aws ecs delete-cluster \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --region ${{ env.AWS_REGION }} || true
+            echo "✅ ECS Cluster deleted"
+          else
+            echo "⚠️  ECS Cluster not found"
+          fi
+
+      - name: Delete CloudFront Distribution
+        run: |
+          echo "🗑️  Deleting CloudFront Distribution..."
+          CF_ID=$(aws cloudfront list-distributions --region ${{ env.AWS_REGION }} 2>/dev/null | \
+            jq -r '.DistributionList.Items[] | select(.Comment=="Vacation Planner Streamlit App") | .Id' | head -1)
+          
+          if [ -n "$CF_ID" ] && [ "$CF_ID" != "null" ]; then
+            # Disable distribution first
+            ETAG=$(aws cloudfront get-distribution-config --id $CF_ID --region ${{ env.AWS_REGION }} --query 'ETag' --output text)
+            CONFIG=$(aws cloudfront get-distribution-config --id $CF_ID --region ${{ env.AWS_REGION }} --query 'DistributionConfig' --output json)
+            
+            # Set Enabled to false
+            NEW_CONFIG=$(echo "$CONFIG" | jq '.Enabled = false')
+            
+            aws cloudfront update-distribution \
+              --id $CF_ID \
+              --distribution-config "$NEW_CONFIG" \
+              --if-match "$ETAG" \
+              --region ${{ env.AWS_REGION }} || true
+            
+            echo "⏳ Waiting for CloudFront to disable (5 min)..."
+            sleep 300
+            
+            # Now delete
+            ETAG=$(aws cloudfront get-distribution-config --id $CF_ID --region ${{ env.AWS_REGION }} --query 'ETag' --output text)
+            aws cloudfront delete-distribution \
+              --id $CF_ID \
+              --if-match "$ETAG" \
+              --region ${{ env.AWS_REGION }} || true
+            echo "✅ CloudFront Distribution deleted"
+          else
+            echo "⚠️  CloudFront Distribution not found"
+          fi
+
+      - name: Delete Application Load Balancer & Target Group
+        run: |
+          echo "🗑️  Deleting ALB & Target Group..."
+          
+          # Get ALB ARN
+          ALB_ARN=$(aws elbv2 describe-load-balancers \
+            --names vacation-planner-alb \
+            --region ${{ env.AWS_REGION }} \
+            --query 'LoadBalancers[0].LoadBalancerArn' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$ALB_ARN" ] && [ "$ALB_ARN" != "None" ]; then
+            # Delete listeners
+            LISTENER_ARNS=$(aws elbv2 describe-listeners \
+              --load-balancer-arn "$ALB_ARN" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'Listeners[*].ListenerArn' \
+              --output text 2>/dev/null || echo "")
+            
+            for LISTENER_ARN in $LISTENER_ARNS; do
+              aws elbv2 delete-listener --listener-arn "$LISTENER_ARN" --region ${{ env.AWS_REGION }} || true
+            done
+            
+            # Delete ALB
+            aws elbv2 delete-load-balancer \
+              --load-balancer-arn "$ALB_ARN" \
+              --region ${{ env.AWS_REGION }} || true
+            echo "✅ ALB deleted"
+          else
+            echo "⚠️  ALB not found"
+          fi
+          
+          # Delete Target Group
+          TG_ARN=$(aws elbv2 describe-target-groups \
+            --names vacation-planner-tg \
+            --region ${{ env.AWS_REGION }} \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+            aws elbv2 delete-target-group \
+              --target-group-arn "$TG_ARN" \
+              --region ${{ env.AWS_REGION }} || true
+            echo "✅ Target Group deleted"
+          else
+            echo "⚠️  Target Group not found"
+          fi
+
+      - name: Delete Security Groups
+        run: |
+          echo "🗑️  Deleting Security Groups..."
+          
+          # Get default VPC
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query 'Vpcs[0].VpcId' --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+          
+          if [ -n "$VPC_ID" ]; then
+            # Delete ALB SG
+            ALB_SG=$(aws ec2 describe-security-groups \
+              --filters "Name=group-name,Values=vacation-planner-alb-sg" "Name=vpc-id,Values=$VPC_ID" \
+              --query 'SecurityGroups[0].GroupId' \
+              --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+            
+            if [ -n "$ALB_SG" ] && [ "$ALB_SG" != "None" ]; then
+              aws ec2 delete-security-group --group-id "$ALB_SG" --region ${{ env.AWS_REGION }} || true
+              echo "✅ ALB Security Group deleted"
+            fi
+            
+            # Delete ECS SG
+            ECS_SG=$(aws ec2 describe-security-groups \
+              --filters "Name=group-name,Values=vacation-planner-ecs-sg" "Name=vpc-id,Values=$VPC_ID" \
+              --query 'SecurityGroups[0].GroupId' \
+              --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+            
+            if [ -n "$ECS_SG" ] && [ "$ECS_SG" != "None" ]; then
+              aws ec2 delete-security-group --group-id "$ECS_SG" --region ${{ env.AWS_REGION }} || true
+              echo "✅ ECS Security Group deleted"
+            fi
+          fi
+
+      - name: Delete CloudWatch Logs Group
+        run: |
+          echo "🗑️  Deleting CloudWatch Logs Group..."
+          aws logs delete-log-group \
+            --log-group-name /ecs/vacation-planner \
+            --region ${{ env.AWS_REGION }} || true
+          echo "✅ CloudWatch Logs Group deleted"
+
+      - name: Delete ECR Repository (optional)
+        if: github.event.inputs.delete_ecr == 'true'
+        run: |
+          echo "🗑️  Deleting ECR Repository..."
+          aws ecr delete-repository \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --region ${{ env.AWS_REGION }} \
+            --force || true
+          echo "✅ ECR Repository deleted"
+
+      - name: Delete IAM Roles (optional)
+        if: github.event.inputs.delete_iam_roles == 'true'
+        run: |
+          echo "🗑️  Deleting IAM Roles..."
+          
+          # Detach policies
+          aws iam detach-role-policy \
+            --role-name ecsTaskExecutionRole \
+            --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy || true
+          
+          # Delete role
+          aws iam delete-role --role-name ecsTaskExecutionRole || true
+          echo "✅ IAM Roles deleted"
+
+      - name: Summary
+        run: |
+          echo "✅ Infrastructure destruction complete!"
+          echo ""
+          echo "🗑️  Deleted resources:"
+          echo "  • ECS Service: ${{ env.ECS_SERVICE }}"
+          echo "  • ECS Cluster: ${{ env.ECS_CLUSTER }}"
+          echo "  • CloudFront Distribution"
+          echo "  • Application Load Balancer"
+          echo "  • Target Group"
+          echo "  • Security Groups"
+          echo "  • CloudWatch Logs Group"
+          if [ "${{ github.event.inputs.delete_ecr }}" = "true" ]; then
+            echo "  • ECR Repository: ${{ env.ECR_REPOSITORY }}"
+          fi
+          if [ "${{ github.event.inputs.delete_iam_roles }}" = "true" ]; then
+            echo "  • IAM Role: ecsTaskExecutionRole"
+          fi
+          echo ""
+          echo "💰 Your AWS account is now clean and won't incur costs for this app!"

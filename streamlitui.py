@@ -20,6 +20,17 @@ from src.vacation_planner.crew import VacationPlanner # Replace path 1
 
 st.set_page_config(page_title="Personal AI Vacation Planner ", page_icon="✈️")
 
+# Add Open Graph meta tags for URL preview/thumbnail
+st.markdown("""
+<meta property="og:title" content="Personal AI Vacation Planner" />
+<meta property="og:description" content="Plan your perfect vacation with AI-powered research and itinerary planning!" />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="https://img.icons8.com/color/96/000000/vacation.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Personal AI Vacation Planner" />
+<meta name="twitter:description" content="Plan your perfect vacation with AI-powered research and itinerary planning!" />
+""", unsafe_allow_html=True)
+
 # Enhanced CSS styling
 st.markdown("""
 <style>
