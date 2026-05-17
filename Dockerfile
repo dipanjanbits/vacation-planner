@@ -6,6 +6,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    git \
+    pkg-config \
+    zlib1g-dev \
+    libjpeg-dev \
+    libpq-dev \
+    libxml2-dev \
+    libxslt1-dev \
     libssl-dev \
     libffi-dev \
     python3-dev \
@@ -19,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel uv
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --no-dev --frozen
+RUN set -ex && uv sync --no-dev --frozen
 
 # Copy application code
 COPY src/ src/
