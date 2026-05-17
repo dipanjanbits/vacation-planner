@@ -1,0 +1,42 @@
+# Configuration for tasks in the vacation planner project.
+research_task:
+  description: >
+    Conduct thorough research about the travel destination {topic}.
+    Find interesting and relevant information to enrich the travel experience.
+  expected_output: >
+    A list of 15 bullet points highlighting the most important and exciting facts about {topic}.
+  agent: vacation_researcher
+
+reporting_task:
+  description: >
+    Review the research findings and create a detailed report about {topic}.
+  expected_output: >
+    A fully fledged report summarizing key information about {topic},
+    formatted in Markdown without using code block syntax (do not use triple backticks).
+  agent: itinerary_planner
+  output_file: report.md
+  output_format: markdown
+
+weather_task:
+  description: >
+    Use the "Get Current Weather" tool to fetch real-time weather data for {topic}.
+    Report the current temperature, humidity, wind speed, and conditions.
+    Also recommend the best months/seasons to visit {topic} based on historical climate patterns.
+  expected_output: >
+    A detailed weather report with REAL current conditions fetched from the weather tool,
+    plus a recommendation of the best time to visit {topic},
+    formatted in Markdown without using code block syntax (do not use triple backticks).
+  agent: weather_researcher
+
+detailed_itinerary_task:
+  description: >
+    Create a detailed day-by-day itinerary for a {number_of_days}-day trip to {topic}.
+    Include specific activities for morning, afternoon, and evening for each day.
+    Consider travel time between locations, popular meal spots, and must-see attractions.
+  expected_output: >
+    A complete {number_of_days}-day itinerary for {topic} with day-by-day breakdown including
+    morning, afternoon, and evening plans, restaurant recommendations, and travel tips,
+    formatted in Markdown without using code block syntax (do not use triple backticks).
+  agent: detailed_itinerary_planner
+  output_file: detailed_itinerary.md
+  output_format: markdown

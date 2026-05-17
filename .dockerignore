@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+tests/
+README.md
+report.md
+detailed_itinerary.md
+.DS_Store
