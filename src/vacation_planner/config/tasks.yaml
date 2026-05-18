@@ -30,13 +30,68 @@ weather_task:
 
 detailed_itinerary_task:
   description: >
-    Create a detailed day-by-day itinerary for a {number_of_days}-day trip to {topic}.
-    Include specific activities for morning, afternoon, and evening for each day.
+    Create a detailed day-by-day itinerary for a {number_of_days}-day trip from {source_city} to {topic}.
+    Start with travel details from {source_city} to {topic} on Day 1.
+    Include specific activities for morning, afternoon, and evening for each day at {topic}.
     Consider travel time between locations, popular meal spots, and must-see attractions.
   expected_output: >
-    A complete {number_of_days}-day itinerary for {topic} with day-by-day breakdown including
-    morning, afternoon, and evening plans, restaurant recommendations, and travel tips,
+    A complete {number_of_days}-day itinerary from {source_city} to {topic} with day-by-day breakdown including
+    travel from source city, morning, afternoon, and evening plans, restaurant recommendations, and travel tips,
     formatted in Markdown without using code block syntax (do not use triple backticks).
   agent: detailed_itinerary_planner
   output_file: detailed_itinerary.md
+  output_format: markdown
+
+hotel_research_task:
+  description: >
+    Research and find the best hotels and accommodations in {topic}.
+    List at least 10 options across budget, mid-range, and luxury categories.
+    For each hotel, include: name, star rating, Google review rating (out of 5), price per night (in USD),
+    key amenities, and location/neighborhood.
+    Present ALL results in a SINGLE markdown table.
+  expected_output: >
+    A SINGLE markdown table with exactly these columns (use these exact header names):
+    | Hotel Name | Star Rating | Google Rating | Price Per Night | Key Amenities | Location |
+    Google Rating must be a numeric value (e.g., 4.5). Price Per Night must be a numeric value in USD (e.g., 120).
+    Do NOT include multiple tables or sorted views. Just one table with all hotels.
+    Formatted in Markdown without using code block syntax (do not use triple backticks).
+  agent: hotel_researcher
+  output_file: hotels.md
+  output_format: markdown
+
+restaurant_research_task:
+  description: >
+    Research and find the best restaurants and cafes in {topic}.
+    List at least 10 options across various cuisines and budget ranges.
+    For each restaurant, include: name, cuisine type, Google review rating (out of 5),
+    approximate cost for 2 people (in USD), popular dishes, and location.
+    Present ALL results in a SINGLE markdown table.
+  expected_output: >
+    A SINGLE markdown table with exactly these columns (use these exact header names):
+    | Restaurant Name | Cuisine | Google Rating | Cost for 2 | Popular Dishes | Location |
+    Google Rating must be a numeric value (e.g., 4.3). Cost for 2 must be a numeric value in USD (e.g., 50).
+    Do NOT include multiple tables or sorted views. Just one table with all restaurants.
+    Formatted in Markdown without using code block syntax (do not use triple backticks).
+  agent: restaurant_researcher
+  output_file: restaurants.md
+  output_format: markdown
+
+activities_research_task:
+  description: >
+    Research all fun activities and entertainment options available in {topic}.
+    Categorize them into: Gaming (arcades, VR, board game cafes), Sports (adventure sports, cycling, hiking),
+    Water Sports (if the city has beaches/lakes - surfing, kayaking, snorkeling, etc.),
+    Spa & Wellness (spas, yoga, meditation centers), and Nightlife (clubs, bars, live music, rooftop lounges).
+    For each activity, include: name/venue, description, approximate cost, timings, and Google rating if available.
+  expected_output: >
+    A detailed activities guide for {topic} organized by category:
+    1. Gaming & Indoor Entertainment
+    2. Sports & Adventure
+    3. Water Sports (mention if not available in the city)
+    4. Spa & Wellness
+    5. Nightlife & Entertainment
+    Each category should list venues/activities with details, costs, timings, and ratings,
+    formatted in Markdown without using code block syntax (do not use triple backticks).
+  agent: activities_researcher
+  output_file: activities.md
   output_format: markdown

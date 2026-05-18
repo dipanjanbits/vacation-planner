@@ -67,6 +67,33 @@ class VacationPlanner():
             llm=llm
         )
 
+    @agent
+    def hotel_researcher(self) -> Agent:
+        return Agent(
+            config=self.agents_config['hotel_researcher'],
+            verbose=True,
+            tools=[serper_dev_tool],
+            llm=llm
+        )
+
+    @agent
+    def restaurant_researcher(self) -> Agent:
+        return Agent(
+            config=self.agents_config['restaurant_researcher'],
+            verbose=True,
+            tools=[serper_dev_tool],
+            llm=llm
+        )
+
+    @agent
+    def activities_researcher(self) -> Agent:
+        return Agent(
+            config=self.agents_config['activities_researcher'],
+            verbose=True,
+            tools=[serper_dev_tool],
+            llm=llm
+        )
+
     # To learn more about structured task outputs,
     # task dependencies, and task callbacks, check out the documentation:
     # https://docs.crewai.com/concepts/tasks#overview-of-a-task
@@ -94,6 +121,27 @@ class VacationPlanner():
         return Task(
             config=self.tasks_config['detailed_itinerary_task'],
             output_file='detailed_itinerary.md'
+        )
+
+    @task
+    def hotel_research_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['hotel_research_task'],
+            output_file='hotels.md'
+        )
+
+    @task
+    def restaurant_research_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['restaurant_research_task'],
+            output_file='restaurants.md'
+        )
+
+    @task
+    def activities_research_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['activities_research_task'],
+            output_file='activities.md'
         )
 
     @crew
