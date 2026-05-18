@@ -4,18 +4,19 @@ FastAPI Backend for Vacation Planner - Deployable on AWS Bedrock AgentCore / ECS
 import os
 import ssl
 import urllib3
+
+# SSL fixes for corporate/proxy environments - MUST be before any crewai/litellm imports
+os.environ["SSL_VERIFY"] = "false"
+os.environ["PYTHONHTTPSVERIFY"] = "0"
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+ssl._create_default_https_context = ssl._create_unverified_context
+
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import json
-
-# SSL fixes for corporate/proxy environments
-os.environ["SSL_VERIFY"] = "false"
-os.environ["PYTHONHTTPSVERIFY"] = "0"
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-ssl._create_default_https_context = ssl._create_unverified_context
 
 from vacation_planner.crew import VacationPlanner
 
