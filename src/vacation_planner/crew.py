@@ -14,9 +14,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 ssl._create_default_https_context = ssl._create_unverified_context
 
 #Initialize SerperDev Tool
-serper_dev_tool=SerperDevTool(api_key="2fc229ff245c121331bca8aef9a3dd21dafc4a63")
-weather_tool=WeatherTool()
-llm=LLM(model="bedrock/us.amazon.nova-pro-v1:0")
+serper_dev_tool = SerperDevTool(api_key=os.getenv("SERPER_API_KEY", ""))
+weather_tool = WeatherTool()
+llm = LLM(model="bedrock/us.amazon.nova-pro-v1:0")
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -107,7 +107,7 @@ class VacationPlanner():
     def reporting_task(self) -> Task:
         return Task(
             config=self.tasks_config['reporting_task'],
-            output_file='report.md'
+            output_file='/tmp/report.md'
         )
 
     @task
@@ -120,28 +120,28 @@ class VacationPlanner():
     def detailed_itinerary_task(self) -> Task:
         return Task(
             config=self.tasks_config['detailed_itinerary_task'],
-            output_file='detailed_itinerary.md'
+            output_file='/tmp/detailed_itinerary.md'
         )
 
     @task
     def hotel_research_task(self) -> Task:
         return Task(
             config=self.tasks_config['hotel_research_task'],
-            output_file='hotels.md'
+            output_file='/tmp/hotels.md'
         )
 
     @task
     def restaurant_research_task(self) -> Task:
         return Task(
             config=self.tasks_config['restaurant_research_task'],
-            output_file='restaurants.md'
+            output_file='/tmp/restaurants.md'
         )
 
     @task
     def activities_research_task(self) -> Task:
         return Task(
             config=self.tasks_config['activities_research_task'],
-            output_file='activities.md'
+            output_file='/tmp/activities.md'
         )
 
     @crew

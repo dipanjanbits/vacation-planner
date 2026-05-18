@@ -112,46 +112,40 @@ def create_plan(request: PlanRequest):
 
         result = VacationPlanner().crew().kickoff(inputs=inputs)
 
-        # Read output files
         response_data = {
             "destination": request.destination,
             "source_city": request.source_city,
             "number_of_days": request.number_of_days,
         }
 
-        # Read report
-        if os.path.exists("report.md"):
-            with open("report.md", "r", encoding="utf-8") as f:
+        if os.path.exists("/tmp/report.md"):
+            with open("/tmp/report.md", "r", encoding="utf-8") as f:
                 response_data["report"] = f.read()
 
-        # Weather from task output
         if hasattr(result, 'tasks_output') and len(result.tasks_output) > 2:
             response_data["weather"] = result.tasks_output[2].raw
 
-        # Read detailed itinerary
-        if os.path.exists("detailed_itinerary.md"):
-            with open("detailed_itinerary.md", "r", encoding="utf-8") as f:
+        if os.path.exists("/tmp/detailed_itinerary.md"):
+            with open("/tmp/detailed_itinerary.md", "r", encoding="utf-8") as f:
                 response_data["itinerary"] = f.read()
 
-        # Read hotels
-        if os.path.exists("hotels.md"):
-            with open("hotels.md", "r", encoding="utf-8") as f:
+        if os.path.exists("/tmp/hotels.md"):
+            with open("/tmp/hotels.md", "r", encoding="utf-8") as f:
                 response_data["hotels"] = f.read()
 
-        # Read restaurants
-        if os.path.exists("restaurants.md"):
-            with open("restaurants.md", "r", encoding="utf-8") as f:
+        if os.path.exists("/tmp/restaurants.md"):
+            with open("/tmp/restaurants.md", "r", encoding="utf-8") as f:
                 response_data["restaurants"] = f.read()
 
-        # Read activities
-        if os.path.exists("activities.md"):
-            with open("activities.md", "r", encoding="utf-8") as f:
+        if os.path.exists("/tmp/activities.md"):
+            with open("/tmp/activities.md", "r", encoding="utf-8") as f:
                 response_data["activities"] = f.read()
 
         return PlanResponse(**response_data)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        raise HTTPException(status_code=500, detail=f"{str(e)}\n{traceback.format_exc()}")
 
 
 @app.get("/cities")
