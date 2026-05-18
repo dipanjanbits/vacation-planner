@@ -300,14 +300,9 @@ jobs:
           REACT_APP_API_URL: ${{ secrets.BACKEND_API_URL || needs.deploy-backend.outputs.api-url }}
         run: |
           echo "🔨 Building frontend with API URL: $REACT_APP_API_URL"
+          # Replace placeholder in config.js with actual backend URL
+          sed -i "s|__BACKEND_API_URL__|${REACT_APP_API_URL}|g" public/config.js
           npm run build
-          
-          # Verify the API URL is in the built files
-          if grep -r "http://.*:8000" build/ > /dev/null 2>&1; then
-            echo "✅ API URL found in build artifacts"
-          else
-            echo "⚠️  API URL might not be embedded in build"
-          fi
 
       - name: Create S3 bucket if not exists
         run: |
