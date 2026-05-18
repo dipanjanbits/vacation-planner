@@ -2,14 +2,39 @@
 FastAPI Backend for Vacation Planner - Deployable on AWS Bedrock AgentCore / ECS
 """
 import os
+import sys
 import ssl
 import urllib3
 
-# SSL fixes for corporate/proxy environments - MUST be before any crewai/litellm imports
+# SSL fixes for corporate/proxy environments - MUST be before any crewai/litellm/httpx imports
 os.environ["SSL_VERIFY"] = "false"
 os.environ["PYTHONHTTPSVERIFY"] = "0"
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+os.environ["HTTPX_VERIFY"] = "false"
+os.environ["REQUESTS_CA_BUNDLE"] = ""
+os.environ["CURL_CA_BUNDLE"] = ""
+
+# Patch ssl module globally
 ssl._create_default_https_context = ssl._create_unverified_context
+
+# Disable urllib3 warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Patch httpx before it's imported by litellm
+import httpx._config as httpx_config
+original_create_ssl_context = httpx_config.create_ssl_context
+
+def patched_create_ssl_context(verify=True, cert=None, trust_env=True):
+    """Patched SSL context that skips certificate verification."""
+    try:
+        return original_create_ssl_context(verify=False, cert=cert, trust_env=trust_env)
+    except Exception:
+        # Fallback: create unverified context
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
+httpx_config.create_ssl_context = patched_create_ssl_context
 
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
