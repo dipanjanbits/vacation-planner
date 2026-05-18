@@ -1,14 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import AsyncSelect from 'react-select/async';
+import Select from 'react-select';
 
 // Use runtime config (loaded from public/config.js)
 // Falls back to environment variable for development
 const API_BASE = window.APP_CONFIG?.API_BASE || process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
+// Embedded cities list - no backend dependency for dropdown
+const WORLD_CITIES = [
+  "Abu Dhabi", "Accra", "Addis Ababa", "Adelaide", "Agra", "Ahmedabad", "Alexandria",
+  "Algiers", "Amman", "Amsterdam", "Anchorage", "Ankara", "Antalya", "Antwerp", "Athens",
+  "Atlanta", "Auckland", "Austin", "Baghdad", "Baku", "Bali", "Baltimore", "Bangalore",
+  "Bangkok", "Barcelona", "Basel", "Beijing", "Beirut", "Belfast", "Belgrade", "Bergen",
+  "Berlin", "Bern", "Bogota", "Bologna", "Boston", "Brasilia", "Bratislava", "Brisbane",
+  "Brussels", "Bucharest", "Budapest", "Buenos Aires", "Cairo", "Calgary", "Cancun",
+  "Cape Town", "Caracas", "Chennai", "Chicago", "Colombo", "Copenhagen", "Dallas",
+  "Delhi", "Denver", "Detroit", "Dhaka", "Doha", "Dubai", "Dublin", "Dubrovnik",
+  "Edinburgh", "Florence", "Frankfurt", "Geneva", "Goa", "Hamburg", "Hanoi", "Helsinki",
+  "Ho Chi Minh City", "Hong Kong", "Honolulu", "Houston", "Hyderabad", "Istanbul",
+  "Jaipur", "Jakarta", "Jerusalem", "Johannesburg", "Karachi", "Kathmandu", "Kochi",
+  "Kolkata", "Krakow", "Kuala Lumpur", "Kyoto", "Lagos", "Las Vegas", "Lisbon",
+  "Liverpool", "London", "Los Angeles", "Madrid", "Male", "Manchester", "Manila",
+  "Marrakech", "Melbourne", "Mexico City", "Miami", "Milan", "Montreal", "Moscow",
+  "Mumbai", "Munich", "Nairobi", "Nashville", "New Orleans", "New York", "Nice",
+  "Orlando", "Osaka", "Oslo", "Paris", "Perth", "Philadelphia", "Phuket", "Portland",
+  "Porto", "Prague", "Pune", "Queenstown", "Reykjavik", "Rio de Janeiro", "Rome",
+  "San Diego", "San Francisco", "Santiago", "Sao Paulo", "Seattle", "Seoul", "Shanghai",
+  "Singapore", "Stockholm", "Sydney", "Taipei", "Tel Aviv", "Tokyo", "Toronto",
+  "Vancouver", "Venice", "Vienna", "Warsaw", "Washington DC", "Wellington", "Zurich"
+].map(c => ({ value: c, label: c }));
+
 function App() {
-  const [cities, setCities] = useState([]);
+  const [cities] = useState(WORLD_CITIES);
   const [sourceCity, setSourceCity] = useState(null);
   const [destination, setDestination] = useState(null);
   const [numberOfDays, setNumberOfDays] = useState(5);
@@ -16,37 +40,6 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
-
-  useEffect(() => {
-    console.log('🔌 API Base URL:', API_BASE);
-    console.log('🔍 Fetching cities from:', `${API_BASE}/cities`);
-    
-    axios.get(`${API_BASE}/cities`)
-      .then(res => {
-        console.log('✅ Cities loaded:', res.data.cities.length, 'cities');
-        setCities(res.data.cities.map(c => ({ value: c, label: c })));
-      })
-      .catch(err => {
-        console.error('❌ Failed to load cities:');
-        console.error('   Status:', err.response?.status);
-        console.error('   Message:', err.message);
-        console.error('   Full error:', err);
-      });
-  }, []);
-
-  const filterCities = (inputValue) => {
-    return cities.filter(c =>
-      c.label.toLowerCase().startsWith(inputValue.toLowerCase())
-    );
-  };
-
-  const loadOptions = (inputValue, callback) => {
-    if (inputValue.length < 2) {
-      callback([]);
-      return;
-    }
-    callback(filterCities(inputValue));
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -92,24 +85,22 @@ function App() {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Source City</label>
-            <AsyncSelect
-              cacheOptions
-              loadOptions={loadOptions}
-              defaultOptions={cities.slice(0, 20)}
+            <Select
+              options={cities}
               onChange={setSourceCity}
               placeholder="Type to search (e.g., Mumbai, New York)..."
               isClearable
+              isSearchable
             />
           </div>
           <div className="form-group">
             <label>Destination</label>
-            <AsyncSelect
-              cacheOptions
-              loadOptions={loadOptions}
-              defaultOptions={cities.slice(0, 20)}
+            <Select
+              options={cities}
               onChange={setDestination}
               placeholder="Type to search (e.g., Paris, Tokyo)..."
               isClearable
+              isSearchable
             />
           </div>
           <div className="form-group">
