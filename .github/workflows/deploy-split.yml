@@ -378,11 +378,10 @@ jobs:
                   "CustomOriginConfig": {
                     "HTTPPort": 80, "HTTPSPort": 443,
                     "OriginProtocolPolicy": "http-only",
-                    "OriginSSLProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
+                    "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
                     "OriginReadTimeout": 60,
                     "OriginKeepaliveTimeout": 5
-                  },
-                  "S3OriginConfig": null
+                  }
                 }] |
                 .CacheBehaviors.Quantity += 1 |
                 .CacheBehaviors.Items += [{
