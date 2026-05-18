@@ -3,7 +3,8 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import AsyncSelect from 'react-select/async';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// Use /api/ prefix to proxy through nginx to backend
+const API_BASE = '/api';
 
 function App() {
   const [cities, setCities] = useState([]);

@@ -59,10 +59,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS - allow React frontend
+# CORS - allow React frontend and nginx proxy
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
