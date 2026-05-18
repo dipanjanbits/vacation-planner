@@ -2,6 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Disable SSL verification globally before any Python imports
+ENV SSL_VERIFY=false \
+    PYTHONHTTPSVERIFY=0 \
+    REQUESTS_CA_BUNDLE="" \
+    CURL_CA_BUNDLE="" \
+    SSL_CERT_FILE="" \
+    HTTPX_VERIFY=false
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

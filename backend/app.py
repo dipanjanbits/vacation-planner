@@ -6,43 +6,21 @@ import sys
 import ssl
 import urllib3
 
-# SSL fixes for corporate/proxy environments - MUST be before any crewai/litellm/httpx imports
-os.environ["SSL_VERIFY"] = "false"
-os.environ["PYTHONHTTPSVERIFY"] = "0"
-os.environ["HTTPX_VERIFY"] = "false"
-os.environ["REQUESTS_CA_BUNDLE"] = ""
-os.environ["CURL_CA_BUNDLE"] = ""
-
-# Patch ssl module globally
+# Patch ssl FIRST before any other imports
 ssl._create_default_https_context = ssl._create_unverified_context
-
-# Disable urllib3 warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Patch httpx module functions before they're used
+# Monkey-patch httpx to skip SSL verification at import time
 try:
-    import httpx._config as httpx_config
-    original_create_ssl_context = httpx_config.create_ssl_context
-    
-    def patched_create_ssl_context(verify=True, cert=None, trust_env=True):
-        """Patched SSL context that skips certificate verification."""
-        try:
-            # Try to create without verification first
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            return context
-        except Exception as e:
-            # Fallback: create minimal SSL context
-            import ssl as ssl_module
-            context = ssl_module.SSLContext(ssl_module.PROTOCOL_TLS_CLIENT)
-            context.check_hostname = False
-            context.verify_mode = ssl_module.CERT_NONE
-            return context
-    
-    httpx_config.create_ssl_context = patched_create_ssl_context
+    import httpx._config as _httpx_config
+    def _patched_ssl(*args, **kwargs):
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    _httpx_config.create_ssl_context = _patched_ssl
 except Exception:
-    pass  # httpx not available yet, will patch later
+    pass
 
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
