@@ -2,7 +2,7 @@
 # Usage: .\sync-from-s3-laptop-a.ps1
 
 # Configuration
-$S3_BUCKET = $env:S3_BUCKET  # Set this env var or hardcode: "my-bucket-name"
+$S3_BUCKET = "dipanjan-docs-personalproject"  # Set this env var or hardcode: "my-bucket-name"
 $S3_PATH = "vacation-planner"
 $LOCAL_PATH = Get-Location
 
