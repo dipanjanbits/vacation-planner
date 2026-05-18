@@ -26,8 +26,6 @@ env:
   ECS_CLUSTER: vacation-planner-cluster
   ECS_SERVICE: vacation-planner-api-service
   CONTAINER_NAME: vacation-planner-api
-  FRONTEND_S3_BUCKET: vacation-planner-frontend
-  CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
 
 jobs:
   # ═══════════════════════════════════════════════════════════════
@@ -263,10 +261,10 @@ jobs:
           echo "================================================"
 
   # ═══════════════════════════════════════════════════════════════
-  # FRONTEND: Build React & Deploy to S3 + CloudFront
+  # FRONTEND: Build React & Deploy to ECS + ALB (HTTP)
   # ═══════════════════════════════════════════════════════════════
   deploy-frontend:
-    name: 🌐 Deploy Frontend (S3 + CloudFront)
+    name: 🌐 Deploy Frontend (ECS + ALB)
     runs-on: ubuntu-latest
     needs: deploy-backend
     if: >
@@ -285,227 +283,157 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci || npm install
-
-      - name: Build React app
-        working-directory: frontend
-        env:
-          REACT_APP_API_URL: ${{ secrets.BACKEND_API_URL || needs.deploy-backend.outputs.api-url }}
+      - name: Create ECR repository if not exists
         run: |
-          echo "🔨 Building frontend with API URL: $REACT_APP_API_URL"
-          npm run build
+          aws ecr describe-repositories --repository-names vacation-planner-frontend 2>/dev/null || \
+          aws ecr create-repository --repository-name vacation-planner-frontend
 
-      - name: Create S3 bucket if not exists
+      - name: Get backend API URL
+        id: api-url
+        run: |
+          API_URL=$(aws elbv2 describe-load-balancers --names vacation-planner-api-alb \
+            --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || echo "localhost:8000")
+          echo "url=http://$API_URL" >> $GITHUB_OUTPUT
+          echo "Backend API URL: http://$API_URL"
+
+      - name: Build and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          REACT_APP_API_URL: ${{ steps.api-url.outputs.url }}
+        run: |
+          docker build -f frontend/Dockerfile \
+            --build-arg REACT_APP_API_URL=$REACT_APP_API_URL \
+            -t $ECR_REGISTRY/vacation-planner-frontend:$IMAGE_TAG \
+            -t $ECR_REGISTRY/vacation-planner-frontend:latest \
+            frontend/
+          docker push $ECR_REGISTRY/vacation-planner-frontend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/vacation-planner-frontend:latest
+          echo "image=$ECR_REGISTRY/vacation-planner-frontend:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create CloudWatch Logs group
+        run: |
+          aws logs create-log-group --log-group-name /ecs/vacation-planner-frontend --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          aws logs put-retention-policy --log-group-name /ecs/vacation-planner-frontend --retention-in-days 14 || true
+
+      - name: Register ECS Task Definition
+        id: task-def
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          BUCKET="${{ env.FRONTEND_S3_BUCKET }}-${ACCOUNT_ID}"
-          echo "BUCKET_NAME=$BUCKET" >> $GITHUB_ENV
-
-          aws s3api head-bucket --bucket $BUCKET 2>/dev/null || \
-          aws s3 mb s3://$BUCKET --region ${{ env.AWS_REGION }}
-
-          # Set bucket for static website hosting
-          aws s3 website s3://$BUCKET/ --index-document index.html --error-document index.html
-
-          # Set public access (for CloudFront OAI, or public)
-          aws s3api put-public-access-block --bucket $BUCKET \
-            --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false" 2>/dev/null || true
-
-          # Bucket policy for public read
-          cat > /tmp/bucket-policy.json << EOF
+          cat > /tmp/frontend-task-def.json << EOF
           {
-            "Version": "2012-10-17",
-            "Statement": [{
-              "Sid": "PublicReadGetObject",
-              "Effect": "Allow",
-              "Principal": "*",
-              "Action": "s3:GetObject",
-              "Resource": "arn:aws:s3:::${BUCKET}/*"
+            "family": "vacation-planner-frontend",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/ecsTaskExecutionRole",
+            "containerDefinitions": [{
+              "name": "vacation-planner-frontend",
+              "image": "${{ steps.build-image.outputs.image }}",
+              "essential": true,
+              "portMappings": [{ "containerPort": 80, "protocol": "tcp" }],
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-group": "/ecs/vacation-planner-frontend",
+                  "awslogs-region": "${{ env.AWS_REGION }}",
+                  "awslogs-stream-prefix": "frontend",
+                  "awslogs-create-group": "true"
+                }
+              }
             }]
           }
           EOF
-          aws s3api put-bucket-policy --bucket $BUCKET --policy file:///tmp/bucket-policy.json
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/frontend-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task-def-arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
 
-      - name: Deploy to S3
-        working-directory: frontend
+      - name: Setup Frontend Infrastructure (first deploy)
+        id: infra
         run: |
-          aws s3 sync build/ s3://$BUCKET_NAME/ --delete \
-            --cache-control "public, max-age=31536000, immutable" \
-            --exclude "index.html" --exclude "service-worker.js"
-          
-          # Upload index.html with no-cache
-          aws s3 cp build/index.html s3://$BUCKET_NAME/index.html \
-            --cache-control "no-cache, no-store, must-revalidate"
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services vacation-planner-frontend-service \
+            --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
 
-      - name: Create or Update CloudFront Distribution
-        id: cloudfront
-        run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers --names vacation-planner-api-alb \
-            --query 'LoadBalancers[0].DNSName' --output text)
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query 'Vpcs[0].VpcId' --output text)
+          SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text | tr '\t' ' ')
+          SUBNET_1=$(echo $SUBNETS | cut -d' ' -f1)
+          SUBNET_2=$(echo $SUBNETS | cut -d' ' -f2)
 
-          EXISTING_DIST_ID=$(aws cloudfront list-distributions 2>/dev/null | \
-            jq -r '.DistributionList.Items[] | select(.Comment=="Vacation Planner React Frontend") | .Id' | head -1)
+          if [ "$SERVICE_STATUS" != "ACTIVE" ]; then
+            # Create ALB security group
+            FE_ALB_SG=$(aws ec2 create-security-group \
+              --group-name vp-fe-alb-sg --description "Frontend ALB SG" --vpc-id $VPC_ID \
+              --query 'GroupId' --output text 2>/dev/null || \
+              aws ec2 describe-security-groups --filters "Name=group-name,Values=vp-fe-alb-sg" "Name=vpc-id,Values=$VPC_ID" \
+              --query 'SecurityGroups[0].GroupId' --output text)
+            aws ec2 authorize-security-group-ingress --group-id $FE_ALB_SG --protocol tcp --port 80 --cidr 0.0.0.0/0 2>/dev/null || true
 
-          if [ -n "$EXISTING_DIST_ID" ] && [ "$EXISTING_DIST_ID" != "null" ]; then
-            echo "dist-id=$EXISTING_DIST_ID" >> $GITHUB_OUTPUT
-            CF_DOMAIN=$(aws cloudfront get-distribution --id $EXISTING_DIST_ID \
-              --query 'Distribution.DomainName' --output text)
-            echo "cf-domain=$CF_DOMAIN" >> $GITHUB_OUTPUT
+            # Create ECS security group
+            FE_ECS_SG=$(aws ec2 create-security-group \
+              --group-name vp-fe-ecs-sg --description "Frontend ECS SG" --vpc-id $VPC_ID \
+              --query 'GroupId' --output text 2>/dev/null || \
+              aws ec2 describe-security-groups --filters "Name=group-name,Values=vp-fe-ecs-sg" "Name=vpc-id,Values=$VPC_ID" \
+              --query 'SecurityGroups[0].GroupId' --output text)
+            aws ec2 authorize-security-group-ingress --group-id $FE_ECS_SG --protocol tcp --port 80 --source-group $FE_ALB_SG 2>/dev/null || true
 
-            # Check if APIOrigin already exists
-            HAS_API_ORIGIN=$(aws cloudfront get-distribution-config --id $EXISTING_DIST_ID | \
-              jq -r '.DistributionConfig.Origins.Items[] | select(.Id=="APIOrigin") | .Id' 2>/dev/null || echo "")
+            # Create ALB
+            FE_ALB_ARN=$(aws elbv2 create-load-balancer \
+              --name vacation-planner-fe-alb --subnets $SUBNET_1 $SUBNET_2 \
+              --security-groups $FE_ALB_SG --scheme internet-facing \
+              --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || \
+              aws elbv2 describe-load-balancers --names vacation-planner-fe-alb \
+              --query 'LoadBalancers[0].LoadBalancerArn' --output text)
 
-            if [ -z "$HAS_API_ORIGIN" ]; then
-              echo "Adding APIOrigin and /api/* behavior to existing distribution..."
-              ETAG=$(aws cloudfront get-distribution-config --id $EXISTING_DIST_ID --query 'ETag' --output text)
-              aws cloudfront get-distribution-config --id $EXISTING_DIST_ID \
-                --query 'DistributionConfig' --output json > /tmp/cf-existing.json
+            # Create Target Group
+            FE_TG_ARN=$(aws elbv2 create-target-group \
+              --name vp-fe-tg --protocol HTTP --port 80 --vpc-id $VPC_ID \
+              --target-type ip --health-check-path /health \
+              --health-check-interval-seconds 30 --healthy-threshold-count 2 \
+              --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || \
+              aws elbv2 describe-target-groups --names vp-fe-tg \
+              --query 'TargetGroups[0].TargetGroupArn' --output text)
 
-              # Inject APIOrigin and /api/* cache behavior
-              jq --arg alb "$ALB_DNS" '
-                .Origins.Quantity += 1 |
-                .Origins.Items += [{
-                  "Id": "APIOrigin",
-                  "DomainName": $alb,
-                  "CustomOriginConfig": {
-                    "HTTPPort": 80, "HTTPSPort": 443,
-                    "OriginProtocolPolicy": "http-only",
-                    "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
-                    "OriginReadTimeout": 60,
-                    "OriginKeepaliveTimeout": 5
-                  }
-                }] |
-                .CacheBehaviors.Quantity += 1 |
-                .CacheBehaviors.Items += [{
-                  "PathPattern": "/api/*",
-                  "TargetOriginId": "APIOrigin",
-                  "ViewerProtocolPolicy": "https-only",
-                  "AllowedMethods": {
-                    "Quantity": 7,
-                    "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"],
-                    "CachedMethods": {"Quantity": 2, "Items": ["GET","HEAD"]}
-                  },
-                  "ForwardedValues": {
-                    "QueryString": true,
-                    "Cookies": {"Forward": "none"},
-                    "Headers": {"Quantity": 3, "Items": ["Origin","Access-Control-Request-Headers","Access-Control-Request-Method"]}
-                  },
-                  "MinTTL": 0, "DefaultTTL": 0, "MaxTTL": 0,
-                  "Compress": false,
-                  "TrustedSigners": {"Enabled": false, "Quantity": 0},
-                  "LambdaFunctionAssociations": {"Quantity": 0},
-                  "FieldLevelEncryptionId": "",
-                  "SmoothStreaming": false
-                }]
-              ' /tmp/cf-existing.json > /tmp/cf-updated.json
+            # Create Listener
+            aws elbv2 create-listener --load-balancer-arn $FE_ALB_ARN \
+              --protocol HTTP --port 80 --default-actions Type=forward,TargetGroupArn=$FE_TG_ARN 2>/dev/null || true
 
-              aws cloudfront update-distribution \
-                --id $EXISTING_DIST_ID \
-                --if-match $ETAG \
-                --distribution-config file:///tmp/cf-updated.json
-              echo "✅ CloudFront distribution updated with APIOrigin"
-            else
-              echo "✅ APIOrigin already exists, skipping update"
-            fi
+            # Create ECS Service
+            aws ecs create-service \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service-name vacation-planner-frontend-service \
+              --task-definition ${{ steps.task-def.outputs.task-def-arn }} \
+              --desired-count 1 --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_1,$SUBNET_2],securityGroups=[$FE_ECS_SG],assignPublicIp=ENABLED}" \
+              --load-balancers "targetGroupArn=$FE_TG_ARN,containerName=vacation-planner-frontend,containerPort=80"
           else
-            # Create new distribution with both origins
-            cat > /tmp/cf-config.json << EOF
-          {
-            "CallerReference": "vp-frontend-$(date +%s)",
-            "Comment": "Vacation Planner React Frontend",
-            "Enabled": true,
-            "DefaultRootObject": "index.html",
-            "Origins": {
-              "Quantity": 2,
-              "Items": [
-                {
-                  "Id": "S3Origin",
-                  "DomainName": "${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com",
-                  "S3OriginConfig": { "OriginAccessIdentity": "" }
-                },
-                {
-                  "Id": "APIOrigin",
-                  "DomainName": "${ALB_DNS}",
-                  "CustomOriginConfig": {
-                    "HTTPPort": 80, "HTTPSPort": 443,
-                    "OriginProtocolPolicy": "http-only",
-                    "OriginSSLProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
-                    "OriginReadTimeout": 60,
-                    "OriginKeepaliveTimeout": 5
-                  }
-                }
-              ]
-            },
-            "CacheBehaviors": {
-              "Quantity": 1,
-              "Items": [{
-                "PathPattern": "/api/*",
-                "TargetOriginId": "APIOrigin",
-                "ViewerProtocolPolicy": "https-only",
-                "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
-                "ForwardedValues": { "QueryString": true, "Cookies": { "Forward": "none" }, "Headers": { "Quantity": 3, "Items": ["Origin","Access-Control-Request-Headers","Access-Control-Request-Method"] } },
-                "MinTTL": 0, "DefaultTTL": 0, "MaxTTL": 0,
-                "Compress": false,
-                "TrustedSigners": {"Enabled": false, "Quantity": 0},
-                "LambdaFunctionAssociations": {"Quantity": 0},
-                "FieldLevelEncryptionId": "",
-                "SmoothStreaming": false
-              }]
-            },
-            "DefaultCacheBehavior": {
-              "TargetOriginId": "S3Origin",
-              "ViewerProtocolPolicy": "redirect-to-https",
-              "AllowedMethods": { "Quantity": 2, "Items": ["GET", "HEAD"], "CachedMethods": { "Quantity": 2, "Items": ["GET", "HEAD"] } },
-              "ForwardedValues": { "QueryString": false, "Cookies": { "Forward": "none" } },
-              "MinTTL": 0, "DefaultTTL": 86400, "MaxTTL": 31536000,
-              "Compress": true,
-              "TrustedSigners": {"Enabled": false, "Quantity": 0},
-              "LambdaFunctionAssociations": {"Quantity": 0},
-              "FieldLevelEncryptionId": ""
-            },
-            "CustomErrorResponses": {
-              "Quantity": 1,
-              "Items": [{
-                "ErrorCode": 404, "ResponseCode": "200",
-                "ResponsePagePath": "/index.html", "ErrorCachingMinTTL": 300
-              }]
-            }
-          }
-          EOF
-            RESULT=$(aws cloudfront create-distribution --distribution-config file:///tmp/cf-config.json)
-            DIST_ID=$(echo $RESULT | jq -r '.Distribution.Id')
-            CF_DOMAIN=$(echo $RESULT | jq -r '.Distribution.DomainName')
-            echo "dist-id=$DIST_ID" >> $GITHUB_OUTPUT
-            echo "cf-domain=$CF_DOMAIN" >> $GITHUB_OUTPUT
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service vacation-planner-frontend-service \
+              --task-definition ${{ steps.task-def.outputs.task-def-arn }} \
+              --force-new-deployment
           fi
 
-      - name: Invalidate CloudFront cache
-        if: steps.cloudfront.outputs.dist-id != ''
+      - name: Wait for service stability
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ steps.cloudfront.outputs.dist-id }} \
-            --paths "/*"
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services vacation-planner-frontend-service || true
 
-      - name: Print deployment URLs
+      - name: Print deployment URL
         run: |
+          FE_DNS=$(aws elbv2 describe-load-balancers --names vacation-planner-fe-alb \
+            --query 'LoadBalancers[0].DNSName' --output text)
           echo "================================================"
           echo "✅ DEPLOYMENT COMPLETE"
-          echo "================================================"
-          echo "🌐 Frontend: https://${{ steps.cloudfront.outputs.cf-domain }}"
-          echo "🔌 Backend API: ${{ needs.deploy-backend.outputs.api-url }}"
-          echo "================================================"
-          echo ""
-          echo "✅ Frontend config.js has been updated automatically"
-          echo "   with the backend API URL."
-          echo ""
-          echo "⚠️  For production: Update backend ALLOWED_ORIGINS to:"
-          echo "    https://${{ steps.cloudfront.outputs.cf-domain }}"
+          echo "🌐 Frontend: http://$FE_DNS"
+          echo "🔌 Backend API: ${{ steps.api-url.outputs.url }}"
           echo "================================================"

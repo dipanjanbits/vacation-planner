@@ -6,9 +6,7 @@ import Select from 'react-select';
 // // Use runtime config (loaded from public/config.js)
 // Falls back to environment variable, then localhost for development
 const getApiBase = () => {
-  // On HTTPS (CloudFront), always use relative /api path — proxied by CloudFront to ALB
-  if (window.location.protocol === 'https:') return '/api';
-  // Local dev fallback
+  // Use runtime config injected at build time, or fall back to same-host for local dev
   return process.env.REACT_APP_API_URL || 'http://localhost:8000';
 };
 const API_BASE = getApiBase();
