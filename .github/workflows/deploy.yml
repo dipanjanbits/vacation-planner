@@ -68,8 +68,16 @@ jobs:
 
       - name: Create ECS Cluster if not exists
         run: |
-          aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --query 'clusters[0].status' --output text 2>/dev/null | grep -q ACTIVE || \
-          aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER }}
+          CLUSTER_STATUS=$(aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --query 'clusters[0].status' --output text 2>/dev/null || echo "MISSING")
+          
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "Creating cluster..."
+            aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER }}
+            echo "Waiting for cluster to be active..."
+            sleep 5
+          fi
+          
+          echo "Cluster is ready"
 
       - name: Register ECS Task Definition
         id: task-def
